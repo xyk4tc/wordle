@@ -1,0 +1,24 @@
+# Wordle Game Configuration
+
+# Maximum number of rounds before game over
+max_rounds: 6
+
+# Default word list for the game (5-letter words only)
+# Use -words flag to load from external file with more words
+word_list:
+  - "APPLE"
+  - "BRAIN"
+  - "CRANE"
+  - "DREAM"
+  - "EARTH"
+  - "FRUIT"
+  - "GRAPE"
+  - "HOUSE"
+  - "LIGHT"
+  - "MUSIC"
+  - "OCEAN"
+  - "PEACE"
+  - "SMILE"
+  - "WATER"
+  - "WORLD"
+
