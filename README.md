@@ -4,6 +4,7 @@ A command-line implementation of the popular Wordle game in Go.
 
 ## Features
 
+### Task 1: Standalone Mode
 - Classic Wordle gameplay with 5-letter words
 - Configurable maximum number of rounds
 - Customizable word list
@@ -12,31 +13,59 @@ A command-line implementation of the popular Wordle game in Go.
   - `?` = Present (correct letter in wrong spot)
   - `_` = Miss (letter not in word)
 
+### Task 2: Server/Client Mode
+- Server/Client architecture for multiplayer support
+- RESTful API with elegant routing (Gin framework)
+- Client-side never knows the answer until game over
+- Server-side input validation
+- Game session management
+- Full history tracking
+
+## Tech Stack
+
+- **Language**: Go 1.24+
+- **Web Framework**: [Gin](https://github.com/gin-gonic/gin) - High-performance HTTP web framework
+- **Configuration**: YAML (gopkg.in/yaml.v3)
+- **Architecture**: Clean layered architecture with separation of concerns
+
 ## Project Structure
 
 ```
 wordle/
 ├── bin/                     # Binary files (generated)
-│   └── wordle              
+│   ├── wordle               # Standalone game (Task 1)
+│   ├── wordle-server        # Server (Task 2)
+│   └── wordle-client        # Client (Task 2)
 ├── cmd/
-│   └── wordle/
-│       └── main.go          # Main entry point (with CLI flags)
+│   ├── wordle/              # Standalone game entry
+│   │   └── main.go
+│   ├── wordle-server/       # Server entry (Task 2)
+│   │   └── main.go
+│   └── wordle-client/       # Client entry (Task 2)
+│       └── main.go
 ├── pkg/
-│   └── cli/
-│       ├── display.go       # Display/output logic
-│       ├── input.go         # Input handling
-│       └── runner.go        # Game runner/controller
+│   ├── api/                 # API protocol (Task 2)
+│   │   └── protocol.go
+│   ├── cli/                 # CLI interface (Task 1)
+│   │   ├── display.go
+│   │   ├── input.go
+│   │   └── runner.go
+│   ├── client/              # Client library (Task 2)
+│   │   └── client.go
+│   └── server/              # Server library (Task 2)
+│       ├── server.go
+│       └── session.go
 ├── internal/
-│   ├── game/
-│   │   ├── game.go          # Core game logic
-│   │   ├── game_test.go     # Game tests
-│   │   ├── word.go          # Word validation and scoring
-│   │   └── word_test.go     # Word scoring tests
-│   └── config/
-│       └── config.go        # Configuration management
+│   ├── game/                # Core game logic (shared)
+│   │   ├── game.go
+│   │   ├── game_test.go
+│   │   ├── word.go
+│   │   └── word_test.go
+│   └── config/              # Configuration management
+│       └── config.go
 ├── cfg/                     # Configuration directory
-│   ├── config.yaml          # Game configuration (includes word list)
-│   └── words.txt            # Word list backup (optional)
+│   ├── config.yaml          # Game configuration
+│   └── words.txt            # Extended word list
 ├── Makefile                 # Build automation
 └── go.mod                   # Go module file
 ```
@@ -203,6 +232,119 @@ Final results:
   2. SLIME  _?_?O
   3. APPLE  OOOOO
 ```
+
+## Task 2: Server/Client Mode
+
+### Quick Start
+
+**Terminal 1 - Start Server:**
+```bash
+make run-server
+# Or manually:
+./bin/wordle-server -port 8080
+```
+
+**Terminal 2 - Start Client:**
+```bash
+make run-client
+# Or manually:
+./bin/wordle-client -server http://localhost:8080
+```
+
+### Server
+
+The server provides a RESTful API for managing Wordle games:
+
+**Start server:**
+```bash
+./bin/wordle-server [options]
+```
+
+**Options:**
+- `-config string`: Path to configuration file (default: "cfg/config.yaml")
+- `-words string`: Path to words list file (overrides config word_list)
+- `-port string`: Server port (default: "8080")
+
+**Examples:**
+```bash
+# Start with default config (15 words)
+./bin/wordle-server
+
+# Start with extended word list
+./bin/wordle-server -words cfg/words.txt
+
+# Start with custom config and port
+./bin/wordle-server -config my_config.yaml -port 9090
+```
+
+**API Endpoints:**
+```
+POST /game/new           - Create a new game
+POST /game/:id/guess     - Submit a guess
+GET  /game/:id/status    - Get game status
+```
+
+**Example API Usage:**
+
+```bash
+# Create new game (uses server configuration)
+curl -X POST http://localhost:8080/game/new \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# Response: {"game_id":"1","max_rounds":6,"message":"Game created successfully"}
+
+# Submit guess
+curl -X POST http://localhost:8080/game/1/guess \
+  -H "Content-Type: application/json" \
+  -d '{"guess": "APPLE"}'
+
+# Response includes results as array of display characters
+# Example: {"guess":"APPLE","results":["?","_","_","O","_"],...}
+
+# Get game status
+curl http://localhost:8080/game/1/status
+```
+
+**API Design Principles:**
+- RESTful design with resource-based URLs
+- Server controls all game settings (max_rounds, word_list)
+- Client cannot override server configuration
+- Server returns display-ready format ('O', '?', '_') - no client-side conversion needed
+- Ensures consistent game experience for all players
+- Uses Gin framework for elegant routing and parameter handling
+
+### Client
+
+The client connects to the server and provides an interactive command-line interface:
+
+**Start client:**
+```bash
+./bin/wordle-client [options]
+```
+
+**Options:**
+- `-server string`: Server URL (default: "http://localhost:8080")
+
+**Note:** Game settings (max rounds, word list) are determined by the server configuration only.
+
+**Features:**
+- Client never knows the answer until game over
+- Server validates all inputs
+- Server controls game configuration (security)
+- Full game history available
+- Same user experience as standalone mode
+
+### Key Differences from Standalone Mode
+
+| Feature | Standalone (Task 1) | Server/Client (Task 2) |
+|---------|-------------------|----------------------|
+| Architecture | Single binary | Separate server + client |
+| Answer visibility | In client memory | Only on server |
+| Input validation | Client-side | Server-side |
+| Game configuration | Client controls | Server controls |
+| Multi-player | No | Yes (via shared server) |
+| Network required | No | Yes |
 
 ## Testing
 
