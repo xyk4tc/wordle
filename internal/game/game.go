@@ -63,6 +63,33 @@ func NewGame(maxRounds int, wordList []string) (*Game, error) {
 	}, nil
 }
 
+// NewGameWithAnswer creates a new game with a specific answer
+// This is used for multiplayer mode where all players share the same answer
+func NewGameWithAnswer(maxRounds int, answer string) (*Game, error) {
+	if maxRounds <= 0 {
+		return nil, errors.New("max rounds must be positive")
+	}
+
+	answer = strings.ToUpper(strings.TrimSpace(answer))
+	if !ValidateWord(answer) {
+		return nil, errors.New("invalid answer word")
+	}
+
+	return &Game{
+		Answer:       answer,
+		MaxRounds:    maxRounds,
+		WordList:     []string{answer},
+		CurrentRound: 0,
+		History:      []GuessResult{},
+		Status:       InProgress,
+	}, nil
+}
+
+// GetRandomInt returns a random integer from 0 to n-1
+func GetRandomInt(n int) int {
+	return rand.Intn(n)
+}
+
 // MakeGuess processes a player's guess and updates the game state
 func (g *Game) MakeGuess(guess string) (GuessResult, error) {
 	if g.Status != InProgress {

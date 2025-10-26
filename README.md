@@ -21,6 +21,18 @@ A command-line implementation of the popular Wordle game in Go.
 - Game session management
 - Full history tracking
 
+### Task 4: Multi-Player Mode
+- **Competitive Race Mode** - multiple players racing to guess the same word
+- Real-time progress monitoring with **long polling**
+- Room-based multiplayer (2-8 players per room)
+- Host controls game start
+- Live rankings and results
+- Seamless mode selection (single-player or multi-player)
+- **Professional terminal handling**:
+  - Uses alternate screen buffer (like vi/vim/less)
+  - Preserves terminal history
+  - Clean exit without terminal pollution
+
 ## Tech Stack
 
 - **Language**: Go 1.24+
@@ -345,6 +357,218 @@ The client connects to the server and provides an interactive command-line inter
 | Game configuration | Client controls | Server controls |
 | Multi-player | No | Yes (via shared server) |
 | Network required | No | Yes |
+
+## Task 4: Multi-Player Mode
+
+### Overview
+
+The multi-player mode implements a **competitive race** where 2-8 players compete to guess the same word first. Players can see each other's progress in real-time, creating an exciting competitive experience.
+
+### Game Flow
+
+```
+1. Mode Selection → Choose "Multi-Player"
+                 ↓
+2. Create/Join Room → Create new room or join existing one
+                 ↓
+3. Waiting Lobby → Wait for players, host starts game
+                 ↓
+4. Racing Game → All players guess simultaneously
+                 ↓
+5. Live Updates → See opponents' progress in real-time
+                 ↓
+6. Final Results → Rankings and winner announcement
+```
+
+### Quick Start
+
+**Terminal 1 - Player 1 (Host):**
+```bash
+# Start server
+./bin/wordle-server
+
+# In another terminal
+./bin/wordle-client
+# Choose: 2 (Multi-Player)
+# Choose: 1 (Create room)
+# Enter nickname: Alice
+# Max players: 4
+# [Room created: 1]
+# Type 'start' when ready
+```
+
+**Terminal 2 - Player 2:**
+```bash
+./bin/wordle-client
+# Choose: 2 (Multi-Player)
+# Choose: 2 (Join room)
+# Room ID: 1
+# Enter nickname: Bob
+# [Waiting for host to start...]
+```
+
+**Terminal 3 - Player 3:**
+```bash
+./bin/wordle-client
+# Choose: 2 (Multi-Player)
+# Choose: 2 (Join room)  
+# Room ID: 1
+# Enter nickname: Charlie
+```
+
+### Game Modes
+
+#### Single-Player Mode
+- Play alone against the word
+- No time pressure
+- Practice and improve
+- Track your own progress
+
+#### Multi-Player Mode (Race)
+- 2-8 players compete simultaneously
+- Same word for all players
+- Real-time progress updates
+- Winner is first to guess correctly
+
+### Winning Rules
+
+**1st Priority: First to guess correctly wins! 🥇**
+
+If multiple players finish:
+- Fewest rounds wins
+- If tied, earliest finish time wins
+
+If nobody guesses:
+- Most attempts made ranks higher
+- Encourages trying your best
+
+### Multi-Player Features
+
+#### Room Management
+```
+Create Room:
+  - Host controls game start
+  - Set max players (2-8)
+  - Share room ID with friends
+
+Join Room:
+  - Enter room ID
+  - Choose unique nickname
+  - Wait for host to start
+
+List Rooms:
+  - See available rooms
+  - Join any waiting room
+```
+
+#### Live Progress Monitoring
+
+The client uses **long polling** to get real-time updates:
+
+```
+┌─── Live Progress ───┐
+│ 🎮 Alice (YOU): Round 2/6 ___O_
+│ 🎮 Bob: Round 3/6 ?____
+│ 🏆 Charlie: Round 4/6 (WON!)
+│ ❌ David: Round 6/6 (LOST)
+└─────────────────────┘
+```
+
+#### Final Rankings
+
+```
+═══════════════════════════════════════
+           GAME OVER!
+═══════════════════════════════════════
+The answer was: SMILE
+
+🏆 Final Rankings:
+  🥇 ✓ Charlie - 4 rounds
+  🥈 ✓ Alice - 5 rounds ← YOU
+  🥉 ❌ Bob - 6 rounds
+  4. ❌ David - 6 rounds
+═══════════════════════════════════════
+```
+
+### API Endpoints (Multi-Player)
+
+```
+POST   /room/create         - Create a new room
+POST   /room/:id/join       - Join a room
+POST   /room/:id/leave      - Leave a room
+POST   /room/:id/start      - Start the game (host only)
+POST   /room/:id/guess      - Submit a guess
+GET    /room/:id/progress   - Get live progress (long polling)
+GET    /room/:id/status     - Get room status
+GET    /room/list           - List available rooms
+```
+
+### Long Polling Implementation
+
+The multi-player mode uses **long polling** for real-time updates:
+
+**Client Request:**
+```bash
+GET /room/1/progress?version=5
+```
+
+**Server Behavior:**
+- If `version > 5`: Return immediately with new data
+- If `version == 5`: **HOLD** request for up to 30 seconds
+- When any player makes a guess: Return immediately
+- On timeout: Return current state
+
+**Benefits:**
+- Near real-time updates (millisecond latency)
+- Efficient (no polling spam)
+- Simple HTTP-based (no WebSocket needed)
+- Works through any proxy/firewall
+
+### Technical Design
+
+#### Architecture
+```
+Client A                 Server                Client B
+   │                       │                      │
+   ├─ POST /room/create ──→│                      │
+   │←─ {room_id: "1"} ─────┤                      │
+   │                       │                      │
+   │  GET /room/1/progress │                      │
+   ├───────────────────────→│                      │
+   │      (HOLD...)         │                      │
+   │                       │←── POST /room/1/join ┤
+   │                       │                      │
+   │←─ {update: "Bob joined"}                     │
+   │                       ├───────────────────────→│
+   │                       │                      │
+   ├─ POST /room/1/start ─→│                      │
+   │                       ├─── Notify All ───────→│
+   │                       │                      │
+   ├─ POST /room/1/guess ─→│                      │
+   │←─ {result} ───────────┤                      │
+   │                       ├─── Update ───────────→│
+   │                       │                      │
+```
+
+#### Data Flow
+1. **Room Creation**: Server generates room ID, selects random word
+2. **Player Join**: Server adds player to room, notifies all
+3. **Game Start**: Host triggers, all players begin simultaneously
+4. **Guess Submit**: Server evaluates, updates progress, notifies all
+5. **Progress Monitor**: Long polling keeps clients updated in real-time
+6. **Game End**: When winner emerges or all finish, show rankings
+
+### Comparison Table
+
+| Feature | Task 2 (Single-Player) | Task 4 (Multi-Player) |
+|---------|------------------------|----------------------|
+| Players | 1 | 2-8 |
+| Competition | Against word | Against players |
+| Updates | On demand | Real-time |
+| Communication | Short polling | Long polling |
+| Winner | Guess correctly | First to guess |
+| Progress | Private | Shared |
+| Pressure | Low | High (competitive) |
 
 ## Testing
 
