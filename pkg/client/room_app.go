@@ -304,13 +304,13 @@ func (a *RoomApp) roomLobby() error {
 
 				// Update player list without disrupting input line
 				ansiMoveCursorUp := fmt.Sprintf(AnsiCursorUp, 1)
-				ansiClearLine := "\r" + AnsiClearLineRight
+				ansiClearLine := "\r" + AnsiClearLine
 
 				playerList := strings.Join(status.Players, ", ")
 				playerStatusLine := fmt.Sprintf("📊 Players (%d/%d): %s", status.PlayerCount, status.MaxPlayers, playerList)
 
-				// Use cursor save/restore to update status without affecting input
-				output := AnsiCursorSave + ansiMoveCursorUp + ansiClearLine + playerStatusLine + AnsiCursorRestore
+				// Move up, clear line, print new status, move down, reprint prompt
+				output := ansiMoveCursorUp + ansiClearLine + playerStatusLine + "\n" + inputPrompt
 				fmt.Print(output)
 			}
 

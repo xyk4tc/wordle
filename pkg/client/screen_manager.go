@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/admin/wordle/pkg/api"
 )
@@ -17,6 +18,7 @@ type ScreenManager struct {
 	logStart      int // Line number where log starts
 	logEnd        int // Line number where log ends
 	inputLine     int // Line number for input
+	inputCol      int // Column position for input cursor (to restore after updates)
 
 	// Config
 	maxLogLines int      // Maximum log lines to keep
@@ -28,6 +30,7 @@ func NewScreenManager() *ScreenManager {
 	return &ScreenManager{
 		maxLogLines: 10,
 		logBuffer:   make([]string, 0),
+		inputCol:    1, // Default to column 1 (will be updated by PromptInput)
 	}
 }
 
@@ -157,7 +160,7 @@ func (sm *ScreenManager) UpdateProgress(progress *api.RoomProgressResponse) {
 	}
 
 	// Build output buffer
-	output := AnsiCursorSave
+	output := ""
 
 	// Update each player line
 	for i, player := range progress.Players {
@@ -185,18 +188,23 @@ func (sm *ScreenManager) UpdateProgress(progress *api.RoomProgressResponse) {
 		info := fmt.Sprintf("%s %-10s: Round %d/%d %s",
 			statusIcon, player.Nickname, player.CurrentRound, player.MaxRounds, lastResult)
 
-		// Pad to 56 chars (60 - 4 for borders)
-		if len(info) > 56 {
-			info = info[:56]
+		// Pad to 56 chars (60 - 4 for borders), using rune count for proper character counting
+		runeCount := utf8.RuneCountInString(info)
+		if runeCount > 56 {
+			// Truncate to 56 characters (not bytes)
+			runes := []rune(info)
+			info = string(runes[:56])
 		} else {
-			info += strings.Repeat(" ", 56-len(info))
+			// Pad to 56 characters
+			info += strings.Repeat(" ", 56-runeCount)
 		}
 
 		output += fmt.Sprintf("║ %s ║", info)
 	}
 
-	// Restore cursor position
-	output += AnsiCursorRestore
+	// Move cursor back to input position (line and column)
+	moveCursorToInput := fmt.Sprintf(AnsiCursorPos, sm.inputLine, sm.inputCol)
+	output += moveCursorToInput
 
 	// Force flush output
 	fmt.Print(output)
@@ -215,7 +223,7 @@ func (sm *ScreenManager) FullRedraw(progress *api.RoomProgressResponse) {
 
 // redrawAllLogs redraws all log lines in the buffer
 func (sm *ScreenManager) redrawAllLogs() {
-	output := AnsiCursorSave
+	output := ""
 
 	// Draw all log lines
 	for i := 0; i < len(sm.logBuffer); i++ {
@@ -225,16 +233,22 @@ func (sm *ScreenManager) redrawAllLogs() {
 		output += AnsiClearLine
 
 		logLine := sm.logBuffer[i]
-		if len(logLine) > 56 {
-			logLine = logLine[:56]
+		// Use rune count for proper character counting (handles emojis, etc.)
+		runeCount := utf8.RuneCountInString(logLine)
+		if runeCount > 56 {
+			// Truncate to 56 characters (not bytes)
+			runes := []rune(logLine)
+			logLine = string(runes[:56])
 		} else {
-			logLine += strings.Repeat(" ", 56-len(logLine))
+			// Pad to 56 characters
+			logLine += strings.Repeat(" ", 56-runeCount)
 		}
 		output += fmt.Sprintf("║  %s ║", logLine)
 	}
 
-	// Restore cursor
-	output += AnsiCursorRestore
+	// Move cursor back to input position (line and column)
+	moveCursorToInput := fmt.Sprintf(AnsiCursorPos, sm.inputLine, sm.inputCol)
+	output += moveCursorToInput
 
 	fmt.Print(output)
 	os.Stdout.Sync()
@@ -260,10 +274,12 @@ func (sm *ScreenManager) PromptInput(round, maxRounds int) {
 	// Pad to fill the line (60 - 4 for borders = 56 chars content, -2 for leading spaces)
 	contentWidth := 56
 	paddedPrompt := "  " + promptText
-	if len(paddedPrompt) < contentWidth {
-		paddedPrompt += strings.Repeat(" ", contentWidth-len(paddedPrompt))
-	} else if len(paddedPrompt) > contentWidth {
-		paddedPrompt = paddedPrompt[:contentWidth]
+	promptRuneCount := utf8.RuneCountInString(paddedPrompt)
+	if promptRuneCount < contentWidth {
+		paddedPrompt += strings.Repeat(" ", contentWidth-promptRuneCount)
+	} else if promptRuneCount > contentWidth {
+		runes := []rune(paddedPrompt)
+		paddedPrompt = string(runes[:contentWidth])
 	}
 
 	// Move cursor to input line and draw the full bordered line
@@ -273,9 +289,9 @@ func (sm *ScreenManager) PromptInput(round, maxRounds int) {
 	output += fmt.Sprintf("║%s║", paddedPrompt)
 
 	// Move cursor to the input position (after the prompt text)
-	// Position = 1 (border) + 2 (spaces) + len(promptText)
-	inputCol := 3 + len(promptText)
-	moveCursorToInput := fmt.Sprintf(AnsiCursorPos, sm.inputLine, inputCol)
+	// Position = 1 (border) + 2 (spaces) + character count of promptText
+	sm.inputCol = 3 + utf8.RuneCountInString(promptText)
+	moveCursorToInput := fmt.Sprintf(AnsiCursorPos, sm.inputLine, sm.inputCol)
 	output += moveCursorToInput
 
 	// Show cursor for user input
