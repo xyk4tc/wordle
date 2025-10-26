@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/admin/wordle/pkg/api"
@@ -11,6 +12,8 @@ import (
 
 // ScreenManager manages split-screen display for multiplayer game
 type ScreenManager struct {
+	mu sync.Mutex // Protects concurrent access to screen state
+
 	// Dynamic layout
 	numPlayers    int // Current number of players
 	progressStart int // Line number where progress starts
@@ -153,9 +156,12 @@ func (sm *ScreenManager) InitScreen(numPlayers int) {
 
 // UpdateProgress updates the progress section (top area)
 func (sm *ScreenManager) UpdateProgress(progress *api.RoomProgressResponse) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
 	// Check if player count changed - need full redraw
 	if len(progress.Players) != sm.numPlayers {
-		sm.FullRedraw(progress)
+		sm.fullRedrawLocked(progress)
 		return
 	}
 
@@ -213,16 +219,62 @@ func (sm *ScreenManager) UpdateProgress(progress *api.RoomProgressResponse) {
 
 // FullRedraw redraws the entire screen (when layout changes)
 func (sm *ScreenManager) FullRedraw(progress *api.RoomProgressResponse) {
-	// Redraw everything (InitScreen will recalculate layout)
-	sm.InitScreen(len(progress.Players))
-	sm.UpdateProgress(progress)
-
-	// Restore all log lines at once
-	sm.redrawAllLogs()
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.fullRedrawLocked(progress)
 }
 
-// redrawAllLogs redraws all log lines in the buffer
-func (sm *ScreenManager) redrawAllLogs() {
+// fullRedrawLocked is the internal implementation without locking
+func (sm *ScreenManager) fullRedrawLocked(progress *api.RoomProgressResponse) {
+	// Note: InitScreen doesn't need lock protection as it only writes to terminal
+	sm.InitScreen(len(progress.Players))
+
+	// Build output for progress update (similar to UpdateProgress but without lock)
+	output := ""
+	for i, player := range progress.Players {
+		lineNum := sm.progressStart + i
+		moveCursor := fmt.Sprintf(AnsiCursorPos, lineNum, 1)
+		output += moveCursor
+		output += AnsiClearLine
+
+		statusIcon := "🎮"
+		if player.Status == "won" {
+			statusIcon = "🏆"
+		} else if player.Status == "lost" {
+			statusIcon = "❌"
+		}
+
+		lastResult := ""
+		if player.LastGuess != nil {
+			lastResult = strings.Join(player.LastGuess.Results, "")
+		}
+
+		info := fmt.Sprintf("%s %-10s: Round %d/%d %s",
+			statusIcon, player.Nickname, player.CurrentRound, player.MaxRounds, lastResult)
+
+		runeCount := utf8.RuneCountInString(info)
+		if runeCount > 56 {
+			runes := []rune(info)
+			info = string(runes[:56])
+		} else {
+			info += strings.Repeat(" ", 56-runeCount)
+		}
+
+		output += fmt.Sprintf("║ %s ║", info)
+	}
+
+	moveCursorToInput := fmt.Sprintf(AnsiCursorPos, sm.inputLine, sm.inputCol)
+	output += moveCursorToInput
+
+	fmt.Print(output)
+	os.Stdout.Sync()
+
+	// Restore all log lines
+	sm.redrawAllLogsLocked()
+}
+
+// redrawAllLogsLocked redraws all log lines (must be called with lock held)
+func (sm *ScreenManager) redrawAllLogsLocked() {
 	output := ""
 
 	// Draw all log lines
@@ -256,6 +308,9 @@ func (sm *ScreenManager) redrawAllLogs() {
 
 // AddLogLine adds a line to the game log (middle area)
 func (sm *ScreenManager) AddLogLine(line string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
 	// Add to buffer
 	sm.logBuffer = append(sm.logBuffer, line)
 	if len(sm.logBuffer) > sm.maxLogLines {
@@ -263,11 +318,14 @@ func (sm *ScreenManager) AddLogLine(line string) {
 	}
 
 	// Redraw all logs to show the new one
-	sm.redrawAllLogs()
+	sm.redrawAllLogsLocked()
 }
 
 // PromptInput shows the input prompt at the bottom
 func (sm *ScreenManager) PromptInput(round, maxRounds int) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
 	// Build the prompt text
 	promptText := fmt.Sprintf("Round %d/%d - Enter your guess: ", round, maxRounds)
 
@@ -304,12 +362,18 @@ func (sm *ScreenManager) PromptInput(round, maxRounds int) {
 
 // ClearInputLine clears the input line (removes user's typed input)
 func (sm *ScreenManager) ClearInputLine() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
 	// Move to input line and clear it, then redraw the empty bordered line
 	moveCursor := fmt.Sprintf(AnsiCursorPos, sm.inputLine, 1)
 	output := moveCursor
 	output += AnsiClearLine
 	// 60 chars total - 2 for borders = 58 chars between borders
 	output += "║" + strings.Repeat(" ", 58) + "║"
+
+	// Reset inputCol to line start since input area is now clear
+	sm.inputCol = 1
 
 	fmt.Print(output)
 	os.Stdout.Sync()
