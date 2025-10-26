@@ -5,9 +5,9 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"unicode/utf8"
 
 	"github.com/admin/wordle/pkg/api"
+	"github.com/mattn/go-runewidth"
 )
 
 // ScreenManager manages split-screen display for multiplayer game
@@ -35,6 +35,41 @@ func NewScreenManager() *ScreenManager {
 		logBuffer:   make([]string, 0),
 		inputCol:    1, // Default to column 1 (will be updated by PromptInput)
 	}
+}
+
+// padOrTruncate pads or truncates a string to exactly targetWidth display columns
+// This properly handles emojis and CJK characters that occupy 2 columns
+func padOrTruncate(s string, targetWidth int) string {
+	currentWidth := runewidth.StringWidth(s)
+
+	if currentWidth == targetWidth {
+		return s
+	}
+
+	if currentWidth > targetWidth {
+		// Need to truncate - use runewidth.Truncate for accurate width-based truncation
+		return runewidth.Truncate(s, targetWidth, "")
+	}
+
+	// Need to pad - add spaces to reach target width
+	padding := targetWidth - currentWidth
+	return s + strings.Repeat(" ", padding)
+}
+
+// centerText centers text within targetWidth display columns
+func centerText(s string, targetWidth int) string {
+	currentWidth := runewidth.StringWidth(s)
+
+	if currentWidth >= targetWidth {
+		return runewidth.Truncate(s, targetWidth, "")
+	}
+
+	// Calculate padding on both sides
+	totalPadding := targetWidth - currentWidth
+	leftPadding := totalPadding / 2
+	rightPadding := totalPadding - leftPadding
+
+	return strings.Repeat(" ", leftPadding) + s + strings.Repeat(" ", rightPadding)
 }
 
 // ANSI Escape Codes
@@ -93,61 +128,72 @@ func (sm *ScreenManager) InitScreen(numPlayers int) {
 	// Track line number while drawing (1-indexed for ANSI cursor positioning)
 	line := 1
 
-	// Line 1: Top border
-	fmt.Println("╔════════════════════════════════════════════════════════════╗")
+	// Content width = 60 (total) - 2 (borders) = 58 columns
+	const contentWidth = 58
+	const totalWidth = 60
+
+	// Line 1: Top border - generate to ensure correct width
+	topBorder := "╔" + strings.Repeat("═", totalWidth-2) + "╗"
+	fmt.Println(topBorder)
 	line++
 
-	// Line 2: Title
-	fmt.Println("║                    🏆 Live Progress                        ║")
+	// Line 2: Title (centered, considering emoji width)
+	titleText := centerText("🏆 Live Progress", contentWidth)
+	fmt.Printf("║%s║\n", titleText)
 	line++
 
-	// Line 3: Separator
-	fmt.Println("╠════════════════════════════════════════════════════════════╣")
+	// Line 3: Separator - generate to ensure correct width
+	separator := "╠" + strings.Repeat("═", totalWidth-2) + "╣"
+	fmt.Println(separator)
 	line++
 
 	// Lines 4+: Progress section (one line per player)
 	sm.progressStart = line
+	emptyLine := strings.Repeat(" ", contentWidth)
 	for i := 0; i < sm.numPlayers; i++ {
-		fmt.Println("║                                                            ║")
+		fmt.Printf("║%s║\n", emptyLine)
 		line++
 	}
 	sm.progressEnd = line - 1
 
 	// Next: Separator
-	fmt.Println("╠════════════════════════════════════════════════════════════╣")
+	fmt.Println(separator)
 	line++
 
-	// Next: Log header
-	fmt.Println("║  Game Log:                                                 ║")
+	// Next: Log header (left-aligned with 2 spaces padding)
+	logHeaderText := padOrTruncate("  Game Log:", contentWidth)
+	fmt.Printf("║%s║\n", logHeaderText)
 	line++
 
 	// Next: Separator
-	fmt.Println("╠════════════════════════════════════════════════════════════╣")
+	fmt.Println(separator)
 	line++
 
 	// Next lines: Log content
 	sm.logStart = line
 	for i := 0; i < sm.maxLogLines; i++ {
-		fmt.Println("║                                                            ║")
+		fmt.Printf("║%s║\n", emptyLine)
 		line++
 	}
 	sm.logEnd = line - 1
 
 	// Next: Separator
-	fmt.Println("╠════════════════════════════════════════════════════════════╣")
+	fmt.Println(separator)
 	line++
 
-	// Next: Input Area header
-	fmt.Println("║  Input Area:                                               ║")
+	// Next: Input Area header (left-aligned with 2 spaces padding)
+	inputHeaderText := padOrTruncate("  Input Area:", contentWidth)
+	fmt.Printf("║%s║\n", inputHeaderText)
 	line++
 
 	// Next: Actual input line (where user types)
 	sm.inputLine = line
-	fmt.Println("║                                                            ║")
+	fmt.Printf("║%s║\n", emptyLine)
 	line++
 
-	// Last: Bottom border
-	fmt.Println("╚════════════════════════════════════════════════════════════╝")
+	// Last: Bottom border - generate to ensure correct width
+	bottomBorder := "╚" + strings.Repeat("═", totalWidth-2) + "╝"
+	fmt.Println(bottomBorder)
 	line++
 
 	// Force flush all output to ensure everything is visible
@@ -191,21 +237,17 @@ func (sm *ScreenManager) UpdateProgress(progress *api.RoomProgressResponse) {
 			lastResult = strings.Join(player.LastGuess.Results, "")
 		}
 
-		info := fmt.Sprintf("%s %-10s: Round %d/%d %s",
-			statusIcon, player.Nickname, player.CurrentRound, player.MaxRounds, lastResult)
+		// Pad nickname to exactly 10 display columns for alignment
+		paddedNickname := padOrTruncate(player.Nickname, 10)
 
-		// Pad to 56 chars (60 - 4 for borders), using rune count for proper character counting
-		runeCount := utf8.RuneCountInString(info)
-		if runeCount > 56 {
-			// Truncate to 56 characters (not bytes)
-			runes := []rune(info)
-			info = string(runes[:56])
-		} else {
-			// Pad to 56 characters
-			info += strings.Repeat(" ", 56-runeCount)
-		}
+		info := fmt.Sprintf("%s %s: Round %d/%d %s",
+			statusIcon, paddedNickname, player.CurrentRound, player.MaxRounds, lastResult)
 
-		output += fmt.Sprintf("║ %s ║", info)
+		// Pad to 58 display columns (60 - 2 borders)
+		// Format: "║{58 cols}║" - consistent with all other lines
+		info = padOrTruncate(info, 58)
+
+		output += fmt.Sprintf("║%s║", info)
 	}
 
 	// Move cursor back to input position (line and column)
@@ -249,18 +291,17 @@ func (sm *ScreenManager) fullRedrawLocked(progress *api.RoomProgressResponse) {
 			lastResult = strings.Join(player.LastGuess.Results, "")
 		}
 
-		info := fmt.Sprintf("%s %-10s: Round %d/%d %s",
-			statusIcon, player.Nickname, player.CurrentRound, player.MaxRounds, lastResult)
+		// Pad nickname to exactly 10 display columns for alignment
+		paddedNickname := padOrTruncate(player.Nickname, 10)
 
-		runeCount := utf8.RuneCountInString(info)
-		if runeCount > 56 {
-			runes := []rune(info)
-			info = string(runes[:56])
-		} else {
-			info += strings.Repeat(" ", 56-runeCount)
-		}
+		info := fmt.Sprintf("%s %s: Round %d/%d %s",
+			statusIcon, paddedNickname, player.CurrentRound, player.MaxRounds, lastResult)
 
-		output += fmt.Sprintf("║ %s ║", info)
+		// Pad to 58 display columns (60 - 2 borders)
+		// Format: "║{58 cols}║" - consistent with all other lines
+		info = padOrTruncate(info, 58)
+
+		output += fmt.Sprintf("║%s║", info)
 	}
 
 	moveCursorToInput := fmt.Sprintf(AnsiCursorPos, sm.inputLine, sm.inputCol)
@@ -285,17 +326,10 @@ func (sm *ScreenManager) redrawAllLogsLocked() {
 		output += AnsiClearLine
 
 		logLine := sm.logBuffer[i]
-		// Use rune count for proper character counting (handles emojis, etc.)
-		runeCount := utf8.RuneCountInString(logLine)
-		if runeCount > 56 {
-			// Truncate to 56 characters (not bytes)
-			runes := []rune(logLine)
-			logLine = string(runes[:56])
-		} else {
-			// Pad to 56 characters
-			logLine += strings.Repeat(" ", 56-runeCount)
-		}
-		output += fmt.Sprintf("║  %s ║", logLine)
+		// Pad to 58 display columns (60 - 2 borders)
+		// Format: "║{58 cols}║" - consistent with all other lines
+		logLine = padOrTruncate(logLine, 58)
+		output += fmt.Sprintf("║%s║", logLine)
 	}
 
 	// Move cursor back to input position (line and column)
@@ -329,16 +363,10 @@ func (sm *ScreenManager) PromptInput(round, maxRounds int) {
 	// Build the prompt text
 	promptText := fmt.Sprintf("Round %d/%d - Enter your guess: ", round, maxRounds)
 
-	// Pad to fill the line (60 - 4 for borders = 56 chars content, -2 for leading spaces)
-	contentWidth := 56
+	// Pad to fill the line (60 - 2 borders = 58 display columns)
+	const contentWidth = 58
 	paddedPrompt := "  " + promptText
-	promptRuneCount := utf8.RuneCountInString(paddedPrompt)
-	if promptRuneCount < contentWidth {
-		paddedPrompt += strings.Repeat(" ", contentWidth-promptRuneCount)
-	} else if promptRuneCount > contentWidth {
-		runes := []rune(paddedPrompt)
-		paddedPrompt = string(runes[:contentWidth])
-	}
+	paddedPrompt = padOrTruncate(paddedPrompt, contentWidth)
 
 	// Move cursor to input line and draw the full bordered line
 	moveCursor := fmt.Sprintf(AnsiCursorPos, sm.inputLine, 1)
@@ -347,8 +375,8 @@ func (sm *ScreenManager) PromptInput(round, maxRounds int) {
 	output += fmt.Sprintf("║%s║", paddedPrompt)
 
 	// Move cursor to the input position (after the prompt text)
-	// Position = 1 (border) + 2 (spaces) + character count of promptText
-	sm.inputCol = 3 + utf8.RuneCountInString(promptText)
+	// Position = 1 (border) + 2 (spaces) + display width of promptText
+	sm.inputCol = 3 + runewidth.StringWidth(promptText)
 	moveCursorToInput := fmt.Sprintf(AnsiCursorPos, sm.inputLine, sm.inputCol)
 	output += moveCursorToInput
 
