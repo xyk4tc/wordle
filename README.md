@@ -788,23 +788,6 @@ func (a *RoomApp) roomLobby() {
 
 ---
 
-#### 5. Throttled UI Updates vs. Immediate
-
-**Chose: Throttled (max 2 updates/second)**
-
-```go
-if time.Since(lastStatusUpdate) < 500*time.Millisecond {
-    continue // Skip update if too frequent
-}
-```
-
-**Reasoning**:
-- Human perception: 2 FPS is sufficient for text updates
-- Prevents flicker on slow terminals
-- Reduces server load (fewer re-renders)
-
----
-
 ## Implementation Details
 
 ### Core Game Logic
@@ -957,100 +940,6 @@ Current (ANSI):                  With Bubble Tea:
 **Benefit**: Increases retention through progression system
 
 ---
-
-### 4. 🎯 Daily Challenge & Social Sharing
-
-**Features**:
-- One word per day, same for everyone globally
-- Share results (emoji grid, no spoilers)
-- Global statistics comparison
-
-**Share Format**:
-```
-Wordle 2025-10-27 3/6
-
-⬜🟨⬜⬜⬜
-⬜🟩🟨🟩⬜
-🟩🟩🟩🟩🟩
-
-Play at: https://wordle.example.com
-```
-
-**Implementation Effort**: ~1 week
-- Deterministic daily word: 1 day
-- Share text generation: 1 day
-- Global stats API: 2 days
-- Clipboard integration: 1 day
-
-**ROI**: **Highest viral potential** - drives organic growth
-
----
-
-### 5. 🎬 Tile Flip Animations
-
-**Description**: Animated reveal like NYT Wordle
-
-**Technique**: Frame-by-frame ANSI rendering
-
-```go
-func AnimateReveal(guess string, results []string) {
-    for i, char := range guess {
-        // Animate single tile flip (10 frames)
-        for frame := 0; frame < 10; frame++ {
-            printFlippingTile(char, frame, results[i])
-            time.Sleep(30 * time.Millisecond)
-        }
-    }
-}
-```
-
-**Effect**:
-```
-C → [flip] → ⬜
-R → [flip] → 🟨 [pop!]
-A → [flip] → ⬜
-N → [flip] → ⬜
-E → [flip] → ⬜
-```
-
-**Implementation Effort**: ~3-5 days
-
-**Benefit**: More satisfying, professional feel
-
----
-
-### 6. 🤖 AI Solver Mode
-
-**Description**: Watch an AI solve Wordle using optimal strategies
-
-**Algorithm**: Information theory (maximize entropy)
-
-```go
-func SuggestOptimalGuess(possibleWords []string, constraints Constraints) string {
-    // Calculate expected information gain for each word
-    // Choose word that maximizes entropy reduction
-}
-```
-
-**Educational Value**: Users learn optimal strategies
-
-**Implementation Effort**: ~1-2 weeks
-
----
-
-### 7. 🌍 i18n (Internationalization)
-
-**Features**:
-- Support multiple languages (Spanish, French, Chinese, etc.)
-- Localized word lists
-- UI text translation
-
-**Benefit**: Global audience
-
-**Implementation Effort**: ~1 week per language
-
----
-
 ### Priority Recommendation
 
 **Immediate (High ROI, Low Effort)**:
@@ -1126,12 +1015,6 @@ go test ./... -cover
 
 ---
 
-## License
-
-This is only a programming assignment.
-
----
-
 ## Summary
 
 This Wordle implementation demonstrates:
@@ -1146,5 +1029,3 @@ This Wordle implementation demonstrates:
 2. **Long polling with sync.Cond** for efficient real-time updates
 3. **Unicode-aware terminal UI** with perfect alignment
 4. **Global input goroutine** pattern for clean stdin handling
-
-Perfect for learning Go, system design, and terminal UI programming! 🚀
