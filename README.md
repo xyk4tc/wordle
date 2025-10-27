@@ -24,7 +24,6 @@ A feature-rich command-line implementation of the popular Wordle game in Go, sup
 - [Implementation Details](#implementation-details)
 - [Future Enhancements](#future-enhancements)
 - [Development](#development)
-- [License](#license)
 
 ---
 
