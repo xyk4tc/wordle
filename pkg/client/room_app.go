@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/admin/wordle/pkg/api"
+	"github.com/mattn/go-runewidth"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -266,7 +267,8 @@ func (a *RoomApp) roomLobby() error {
 	fmt.Println()
 
 	// Track last status update time to throttle UI updates
-	lastStatusUpdate := time.Now()
+	// Initialize to zero time so first update happens immediately
+	var lastStatusUpdate time.Time
 
 	// Define input prompts based on user role
 	var inputPrompt string
@@ -451,7 +453,7 @@ gameLoop:
 	// Wait a bit for final updates
 	time.Sleep(500 * time.Millisecond)
 
-	// Show final results
+	// Show final results in a clean screen
 	a.mu.RLock()
 	finalProgress := a.currentProgress
 	a.mu.RUnlock()
@@ -460,9 +462,7 @@ gameLoop:
 		a.showFinalResults(finalProgress)
 	}
 
-	// Wait for user to press any key to continue
-	a.screen.AddLogLine("")
-	a.screen.AddLogLine("Press ENTER to return to menu...")
+	// Wait for user to press ENTER - prompt is shown in showFinalResults
 	<-a.inputChan
 
 	return nil
@@ -523,47 +523,110 @@ func (a *RoomApp) monitorProgress() {
 	}
 }
 
-// showFinalResults displays the final game results and rankings
+// showFinalResults displays the final game results and rankings in a clean screen
 func (a *RoomApp) showFinalResults(progress *api.RoomProgressResponse) {
-	fmt.Println("\n═══════════════════════════════════════")
-	fmt.Println("           GAME OVER!")
-	fmt.Println("═══════════════════════════════════════")
+	// Clear the screen and exit alternate buffer to show a clean results page
+	fmt.Print("\033[2J\033[H") // Clear screen and move cursor to top
 
-	if progress.Answer != "" {
-		fmt.Printf("The answer was: %s\n\n", progress.Answer)
+	// Helper function to center text with proper emoji width handling
+	centerText := func(text string, width int) string {
+		currentWidth := runewidth.StringWidth(text)
+		if currentWidth >= width {
+			return runewidth.Truncate(text, width, "")
+		}
+		totalPadding := width - currentWidth
+		leftPadding := totalPadding / 2
+		rightPadding := totalPadding - leftPadding
+		return strings.Repeat(" ", leftPadding) + text + strings.Repeat(" ", rightPadding)
 	}
 
+	// Helper function to pad or truncate to exact width
+	padOrTruncate := func(text string, width int) string {
+		currentWidth := runewidth.StringWidth(text)
+		if currentWidth == width {
+			return text
+		}
+		if currentWidth > width {
+			return runewidth.Truncate(text, width, "")
+		}
+		return text + strings.Repeat(" ", width-currentWidth)
+	}
+
+	// Build the results page
+	fmt.Println()
+	fmt.Println()
+	fmt.Println("╔══════════════════════════════════════════════════════════╗")
+	fmt.Println("║                                                          ║")
+	fmt.Printf("║%s║\n", centerText("🎮 GAME OVER! 🎮", 58))
+	fmt.Println("║                                                          ║")
+	fmt.Println("╠══════════════════════════════════════════════════════════╣")
+
+	// Show the answer
+	if progress.Answer != "" {
+		answerLine := fmt.Sprintf("The Answer was: %s", progress.Answer)
+		fmt.Printf("║%s║\n", centerText(answerLine, 58))
+	}
+
+	fmt.Println("║                                                          ║")
+	fmt.Println("╠══════════════════════════════════════════════════════════╣")
+	fmt.Println("║                     🏆 Final Rankings                    ║")
+	fmt.Println("╠══════════════════════════════════════════════════════════╣")
+
+	// Show rankings
 	if len(progress.Ranking) > 0 {
-		fmt.Println("🏆 Final Rankings:")
 		for i, playerID := range progress.Ranking {
 			player := a.findPlayerByID(progress, playerID)
 			if player != nil {
-				medal := fmt.Sprintf("%d.", i+1)
+				// Determine medal
+				medal := "  "
 				if i == 0 {
 					medal = "🥇"
 				} else if i == 1 {
 					medal = "🥈"
 				} else if i == 2 {
 					medal = "🥉"
+				} else {
+					medal = fmt.Sprintf("%d.", i+1)
 				}
 
+				// Status icon
 				statusIcon := "❌"
 				if player.Status == "won" {
-					statusIcon = "✓"
+					statusIcon = "✅"
 				}
 
+				// Highlight current player
 				marker := ""
 				if player.PlayerID == a.client.GetPlayerID() {
-					marker = " ← YOU"
+					marker = " <- YOU" // Use ASCII arrow for better terminal compatibility
 				}
 
-				fmt.Printf("  %s %s %s - %d rounds%s\n",
-					medal, statusIcon, player.Nickname, player.CurrentRound, marker)
+				// Pad nickname to fixed width (12 display columns) for alignment
+				paddedNickname := padOrTruncate(player.Nickname, 12)
+
+				// Format the ranking line with proper width handling
+				rankLine := fmt.Sprintf("  %s %s %s %d rounds%s",
+					medal, statusIcon, paddedNickname, player.CurrentRound, marker)
+
+				// Pad or truncate to exactly 58 display columns
+				rankLine = padOrTruncate(rankLine, 58)
+
+				fmt.Printf("║%s║\n", rankLine)
 			}
+		}
+
+		// Add empty lines if less than 5 players
+		for i := len(progress.Ranking); i < 5; i++ {
+			fmt.Println("║                                                          ║")
 		}
 	}
 
-	fmt.Println("═══════════════════════════════════════")
+	fmt.Println("╠══════════════════════════════════════════════════════════╣")
+	fmt.Println("║                                                          ║")
+	fmt.Println("║              Press ENTER to return to menu               ║")
+	fmt.Println("║                                                          ║")
+	fmt.Println("╚══════════════════════════════════════════════════════════╝")
+	fmt.Println()
 }
 
 // findMyProgress finds the current player's progress
@@ -599,28 +662,45 @@ func (a *RoomApp) listRooms() {
 		return
 	}
 
-	fmt.Println("\n╔═══════════════════════════════════════╗")
-	fmt.Println("║       Available Rooms                 ║")
-	fmt.Println("╠═══════════════════════════════════════╣")
+	// Helper to pad room line to 60 columns total
+	padRoomLine := func(text string) string {
+		width := runewidth.StringWidth(text)
+		if width >= 58 {
+			return runewidth.Truncate(text, 58, "")
+		}
+		return text + strings.Repeat(" ", 58-width)
+	}
+
+	fmt.Println("\n╔══════════════════════════════════════════════════════════╗")
+	fmt.Println("║                     Available Rooms                      ║")
+	fmt.Println("╠══════════════════════════════════════════════════════════╣")
 
 	hasJoinableRooms := false
 	for _, room := range resp.Rooms {
 		// Only show rooms that are waiting (joinable)
 		if room.Status == "waiting" {
 			hasJoinableRooms = true
-			playersList := ""
+
+			// Show only host (first player) to avoid line overflow
+			hostName := "none"
 			if len(room.Players) > 0 {
-				playersList = fmt.Sprintf(" [%s]", strings.Join(room.Players, ", "))
+				hostName = room.Players[0]
 			}
-			fmt.Printf("║ ⏳ Room ID: %-8s %d/%d players%s\n",
-				room.RoomID, room.PlayerCount, room.MaxPlayers, playersList)
+
+			// Format: ⏳ Room: ID  (1/2)  Host: name
+			roomInfo := fmt.Sprintf(" ⏳ Room: %-8s (%d/%d)  Host: %s",
+				room.RoomID, room.PlayerCount, room.MaxPlayers, hostName)
+
+			roomInfo = padRoomLine(roomInfo)
+			fmt.Printf("║%s║\n", roomInfo)
 		}
 	}
 
 	if !hasJoinableRooms {
-		fmt.Println("║ No joinable rooms available           ║")
+		emptyMsg := padRoomLine(" No joinable rooms available")
+		fmt.Printf("║%s║\n", emptyMsg)
 	}
 
-	fmt.Println("╚═══════════════════════════════════════╝")
+	fmt.Println("╚══════════════════════════════════════════════════════════╝")
 	fmt.Println()
 }
