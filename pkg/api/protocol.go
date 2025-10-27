@@ -43,3 +43,80 @@ type GameStatusResponse struct {
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
+
+// ============================================
+// Multi-player Room API (Task 4)
+// ============================================
+
+// CreateRoomRequest represents a request to create a multiplayer room
+type CreateRoomRequest struct {
+	Nickname   string `json:"nickname"`
+	MaxPlayers int    `json:"max_players,omitempty"` // Default: 4
+}
+
+// CreateRoomResponse represents the response when creating a room
+type CreateRoomResponse struct {
+	RoomID    string `json:"room_id"`
+	MaxRounds int    `json:"max_rounds"`
+	Message   string `json:"message"`
+}
+
+// JoinRoomRequest represents a request to join a room
+type JoinRoomRequest struct {
+	Nickname string `json:"nickname"`
+}
+
+// JoinRoomResponse represents the response when joining a room
+type JoinRoomResponse struct {
+	RoomID    string   `json:"room_id"`
+	MaxRounds int      `json:"max_rounds"`
+	Players   []string `json:"players"` // List of player nicknames
+	IsHost    bool     `json:"is_host"`
+	Message   string   `json:"message"`
+}
+
+// RoomGuessRequest represents a guess in multiplayer mode
+type RoomGuessRequest struct {
+	PlayerID string `json:"player_id"`
+	Guess    string `json:"guess"`
+}
+
+// PlayerProgress represents a player's progress in the room
+type PlayerProgress struct {
+	PlayerID     string          `json:"player_id"`
+	Nickname     string          `json:"nickname"`
+	CurrentRound int             `json:"current_round"`
+	MaxRounds    int             `json:"max_rounds"`
+	Status       string          `json:"status"` // "waiting", "playing", "won", "lost"
+	LastGuess    *GuessResponse  `json:"last_guess,omitempty"`
+	History      []GuessResponse `json:"history"`
+	FinishTime   int64           `json:"finish_time,omitempty"` // Unix timestamp when finished
+}
+
+// RoomProgressResponse represents the progress of all players in a room
+type RoomProgressResponse struct {
+	RoomID    string           `json:"room_id"`
+	Status    string           `json:"status"` // "waiting", "playing", "finished"
+	Players   []PlayerProgress `json:"players"`
+	Winner    string           `json:"winner,omitempty"`  // PlayerID of winner
+	Ranking   []string         `json:"ranking,omitempty"` // Sorted PlayerIDs by rank
+	Answer    string           `json:"answer,omitempty"`  // Only when game finished
+	Version   int              `json:"version"`           // For long polling
+	Timestamp int64            `json:"timestamp"`         // Unix timestamp
+}
+
+// RoomStatusResponse represents the current room status
+type RoomStatusResponse struct {
+	RoomID      string   `json:"room_id"`
+	Status      string   `json:"status"` // "waiting", "playing", "finished"
+	PlayerCount int      `json:"player_count"`
+	MaxPlayers  int      `json:"max_players"`
+	MaxRounds   int      `json:"max_rounds"`
+	Players     []string `json:"players"` // List of player nicknames
+	Host        string   `json:"host"`    // Host player ID
+}
+
+// ListRoomsResponse represents the list of available rooms
+type ListRoomsResponse struct {
+	Rooms []RoomStatusResponse `json:"rooms"`
+}
