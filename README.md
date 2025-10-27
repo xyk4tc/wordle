@@ -4,7 +4,12 @@ A command-line implementation of the popular Wordle game in Go.
 
 ## Features
 
-### Task 1: Standalone Mode
+### Unified Client - All Modes in One Binary!
+
+The `wordle-client` now provides **three game modes** in a single executable:
+
+#### Mode 0: Offline/Standalone (Task 1)
+- **No server required!** Play completely offline
 - Classic Wordle gameplay with 5-letter words
 - Configurable maximum number of rounds
 - Customizable word list
@@ -13,25 +18,27 @@ A command-line implementation of the popular Wordle game in Go.
   - `?` = Present (correct letter in wrong spot)
   - `_` = Miss (letter not in word)
 
-### Task 2: Server/Client Mode
-- Server/Client architecture for multiplayer support
+#### Mode 1: Single-Player Online (Task 2)
+- Connects to server for online gameplay
+- Server/Client architecture
 - RESTful API with elegant routing (Gin framework)
 - Client-side never knows the answer until game over
 - Server-side input validation
 - Game session management
 - Full history tracking
 
-### Task 4: Multi-Player Mode
+#### Mode 2: Multi-Player Online (Task 4)
 - **Competitive Race Mode** - multiple players racing to guess the same word
 - Real-time progress monitoring with **long polling**
 - Room-based multiplayer (2-8 players per room)
 - Host controls game start
 - Live rankings and results
-- Seamless mode selection (single-player or multi-player)
 - **Professional terminal handling**:
   - Uses alternate screen buffer (like vi/vim/less)
   - Preserves terminal history
   - Clean exit without terminal pollution
+
+**Key Advantage**: One binary (`wordle-client`) supports all tasks without recompilation!
 
 ## Tech Stack
 
@@ -45,15 +52,12 @@ A command-line implementation of the popular Wordle game in Go.
 ```
 wordle/
 ├── bin/                     # Binary files (generated)
-│   ├── wordle               # Standalone game (Task 1)
-│   ├── wordle-server        # Server (Task 2)
-│   └── wordle-client        # Client (Task 2)
+│   ├── wordle-server        # Server binary
+│   └── wordle-client        # Unified client (all 3 modes)
 ├── cmd/
-│   ├── wordle/              # Standalone game entry
+│   ├── wordle-server/       # Server entry
 │   │   └── main.go
-│   ├── wordle-server/       # Server entry (Task 2)
-│   │   └── main.go
-│   └── wordle-client/       # Client entry (Task 2)
+│   └── wordle-client/       # Unified client entry
 │       └── main.go
 ├── pkg/
 │   ├── api/                 # API protocol (Task 2)
@@ -116,51 +120,65 @@ go build -o wordle ./cmd/wordle
 
 ## Running
 
-### Using Makefile
+### Quick Start - Unified Client
+
+The `wordle-client` binary now supports all three modes:
 
 ```bash
-# Build and run
-make run
+# Interactive mode - choose your game mode
+./bin/wordle-client
+
+# Direct mode selection via command line
+./bin/wordle-client -mode offline    # Offline mode (no server)
+./bin/wordle-client -mode single     # Online single-player
+./bin/wordle-client -mode multi      # Online multi-player
+
+# Offline mode with custom word list
+./bin/wordle-client -mode offline -words cfg/words.txt
+
+# Online modes with custom server
+./bin/wordle-client -mode single -server http://localhost:8080
+./bin/wordle-client -mode multi -server http://localhost:8080
 ```
 
-### Manual Run
+### Mode Selection Interface
 
-```bash
-# Run with default configuration (15 words from config.yaml)
-./bin/wordle
+When you run `./bin/wordle-client` without `-mode` flag:
 
-# Run with larger word list from file
-./bin/wordle -words cfg/words.txt
+```
+╔════════════════════════════════════╗
+║     Welcome to Wordle Game!        ║
+╚════════════════════════════════════╝
 
-# Run with custom configuration file
-./bin/wordle -config path/to/config.yaml
+Please select game mode:
+  0. Offline      (standalone, no server required)
+  1. Single-Player (online, connect to server)
+  2. Multi-Player  (online, race against friends)
 
-# Run with both custom config and words file
-./bin/wordle -config path/to/config.yaml -words path/to/words.txt
-
-# Show help
-./bin/wordle -h
-
-# Or run directly with Go (no build needed)
-go run ./cmd/wordle
-
-# Run with custom options using Go
-go run ./cmd/wordle -words cfg/words.txt
+Enter choice (0, 1, or 2):
 ```
 
 ## Configuration
 
-### Command Line Arguments
+### Command Line Arguments (wordle-client)
 
 ```bash
+-mode string
+    game mode: offline, single, or multi (default: interactive prompt)
+-server string
+    server URL for online modes (default: "http://localhost:8080")
 -config string
-    path to configuration file (default "cfg/config.yaml")
+    path to configuration file for offline mode (default: "cfg/config.yaml")
 -words string
-    path to words list file (overrides config word_list)
+    path to words list file for offline mode (overrides config word_list)
 ```
 
+**Mode-Specific Arguments:**
+- **Offline mode**: Uses `-config` and `-words` flags
+- **Online modes**: Uses `-server` flag (server configuration determines game settings)
+
 **Note**: 
-- By default, the game uses a small word list (15 words) from `cfg/config.yaml`
+- By default, offline mode uses a small word list (15 words) from `cfg/config.yaml`
 - Use `-words cfg/words.txt` to load a larger word list (80+ words) from the file
 
 ### Configuration File
@@ -347,16 +365,17 @@ The client connects to the server and provides an interactive command-line inter
 - Full game history available
 - Same user experience as standalone mode
 
-### Key Differences from Standalone Mode
+### Mode Comparison
 
-| Feature | Standalone (Task 1) | Server/Client (Task 2) |
-|---------|-------------------|----------------------|
-| Architecture | Single binary | Separate server + client |
-| Answer visibility | In client memory | Only on server |
-| Input validation | Client-side | Server-side |
-| Game configuration | Client controls | Server controls |
-| Multi-player | No | Yes (via shared server) |
-| Network required | No | Yes |
+| Feature | Offline Mode (0) | Single-Player (1) | Multi-Player (2) |
+|---------|-----------------|-------------------|------------------|
+| Server required | ❌ No | ✅ Yes | ✅ Yes |
+| Answer visibility | Client-side | Server-side | Server-side |
+| Configuration | Local config | Server config | Server config |
+| Competitors | None | None | 2-8 players |
+| Real-time updates | N/A | N/A | ✅ Yes |
+| Network latency | None | Low | Low |
+| Best for | Practice/Travel | Solo online | Competitive racing |
 
 ## Task 4: Multi-Player Mode
 
@@ -560,15 +579,16 @@ Client A                 Server                Client B
 
 ### Comparison Table
 
-| Feature | Task 2 (Single-Player) | Task 4 (Multi-Player) |
-|---------|------------------------|----------------------|
-| Players | 1 | 2-8 |
-| Competition | Against word | Against players |
-| Updates | On demand | Real-time |
-| Communication | Short polling | Long polling |
-| Winner | Guess correctly | First to guess |
-| Progress | Private | Shared |
-| Pressure | Low | High (competitive) |
+| Feature | Offline (Mode 0) | Single-Player (Mode 1) | Multi-Player (Mode 2) |
+|---------|-----------------|----------------------|----------------------|
+| Server | Not required | Required | Required |
+| Players | 1 | 1 | 2-8 |
+| Competition | Against word | Against word | Against players |
+| Updates | Local | On demand | Real-time |
+| Communication | None | HTTP requests | Long polling |
+| Winner | Guess correctly | Guess correctly | First to guess |
+| Progress | Private | Private | Shared |
+| Pressure | Low | Low | High (competitive) |
 
 ## Testing
 
@@ -598,15 +618,28 @@ go test ./... -cover
 ## Available Make Commands
 
 ```bash
-make build          # Build the binary to bin/wordle
-make run            # Build and run the game
-make test           # Run all tests
-make test-coverage  # Run tests with coverage report
-make clean          # Remove build artifacts
-make deps           # Download and tidy dependencies
-make fmt            # Format code
-make lint           # Run linter
-make help           # Show help message
+# Build commands
+make build              # Build all binaries (server + client)
+make build-server       # Build server only
+make build-client       # Build unified client only
+
+# Run commands (Client)
+make run                # Run client with interactive mode selection
+make run-offline        # Run client in offline mode (no server)
+make run-offline-extended  # Run offline with extended word list
+
+# Run commands (Server)
+make run-server         # Run server (default word list)
+make run-server-extended  # Run server with extended word list
+
+# Other commands
+make test               # Run all tests
+make test-coverage      # Run tests with coverage report
+make clean              # Remove build artifacts
+make deps               # Download and tidy dependencies
+make fmt                # Format code
+make lint               # Run linter
+make help               # Show detailed help message
 ```
 
 ## Implementation Details
